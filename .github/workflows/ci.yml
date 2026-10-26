@@ -1,0 +1,47 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: shortener_test
+          POSTGRES_USER: shortener
+          POSTGRES_PASSWORD: test_password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U shortener -d shortener_test"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://shortener:test_password@localhost:5432/shortener_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Formatting
+        run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test -race -tags=integration -coverprofile=coverage.out ./...
+      - run: go build ./cmd/shortener
+      - name: Build Docker image
+        run: docker build -t url-shortener:ci .
+      - name: Smoke test image
+        run: |
+          docker run -d --name shortener-smoke -p 127.0.0.1:8080:8080 url-shortener:ci -storage=memory
+          trap 'docker logs shortener-smoke; docker rm -f shortener-smoke' EXIT
+          for i in $(seq 1 20); do
+            if curl --fail --silent http://localhost:8080/healthz; then break; fi
+            sleep 1
+          done
+          curl --fail http://localhost:8080/healthz
+          result=$(curl --fail --silent -H 'Content-Type: application/json' -d '{"url":"https://example.com"}' http://localhost:8080/api/links)
+          code=$(echo "$result" | jq -r .code)
+          curl --fail --silent "http://localhost:8080/$code" | jq -e '.original_url == "https://example.com"'

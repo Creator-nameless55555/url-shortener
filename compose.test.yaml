@@ -1,0 +1,25 @@
+# Изолированная БД тестов. Не подключайте сюда базу с нужными данными.
+services:
+  db:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: shortener_test
+      POSTGRES_USER: shortener
+      POSTGRES_PASSWORD: test_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shortener -d shortener_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    tmpfs: /var/lib/postgresql/data
+  tests:
+    image: golang:1.26.1-bookworm
+    working_dir: /src
+    volumes:
+      - .:/src:ro
+    environment:
+      TEST_DATABASE_URL: postgres://shortener:test_password@db:5432/shortener_test?sslmode=disable
+    command: ["go", "test", "-race", "-tags=integration", "-count=1", "./..."]
+    depends_on:
+      db:
+        condition: service_healthy

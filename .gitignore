@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+bin/
+coverage.out
+coverage.html
+*.exe
+*.test
+*.tar
+*.tar.gz
+.vscode/
+.idea/
+

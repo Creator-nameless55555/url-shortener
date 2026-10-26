@@ -1,0 +1,45 @@
+services:
+  db:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: shortener
+      POSTGRES_USER: shortener
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Copy .env.example to .env and set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shortener -d shortener"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    build: .
+    image: url-shortener:local
+    command: ["-storage=postgres", "-migrate"]
+    environment:
+      DATABASE_URL: postgres://shortener:${POSTGRES_PASSWORD}@db:5432/shortener?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    build: .
+    image: url-shortener:local
+    command: ["-storage=postgres", "-base-url=${BASE_URL:-http://localhost:8080}"]
+    environment:
+      DATABASE_URL: postgres://shortener:${POSTGRES_PASSWORD}@db:5432/shortener?sslmode=disable
+    ports:
+      - "127.0.0.1:${HTTP_PORT:-8080}:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 15s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
